@@ -1,0 +1,7 @@
+# Python Environment Files
+venv/
+__pycache__/
+
+# Project Files
+*.pyc
+.DS_Store
