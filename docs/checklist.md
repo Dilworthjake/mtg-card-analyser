@@ -50,12 +50,11 @@
 - [x] Normalise Subtypes: create subtype_lookup table.
 
 - [x] Normalise Editions: create edition_lookup table.
-
 - [x] Create Join Table: generate card_subtype_link table linking Card_ID and Subtype_ID.
 
 - [x] Finalise Fact Table: generate card_details with all Foreign Keys.
 
-- [ ] Create a spliter for cards with two faces
+- [ ] Create a splitter for cards with two faces
 
 - [ ] Create logic to identify cards that pay with life points
 
@@ -114,6 +113,14 @@
 - [x] Create requirements.txt
 - [x] Create readme
 
-- [ ] Style the Streamlit app for a better user experience (e.g., using MTG-themed colors).
+- [ ] Style the Streamlit app for a better user experience (e.g. using MTG-themed colors).
 
 - [x] User testing of all filters and visualizations.
+
+# Future dev ideas
+
+- re-introduce pricing to allow people to estimate cost of build (will have to find reliable source data)
+- add a save card to favourites/ new deck to help build
+- properly handle rarity options e.g (foils)
+- add cards text/rule to comparison page in case image does not load
+- add cards power and toughness as filters

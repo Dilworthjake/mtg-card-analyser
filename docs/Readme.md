@@ -2,7 +2,7 @@
 
 ## MTG Project Overview
 
-This project implements an Extract, Transform, and Load (ETL) pipeline designed to scrape Magic: The Gathering (MTG) card data from an online source and transform it into clean, normalized data. The resulting tables are saved as CSV files, ready for analysis with Pandas to be used with streamlit. The CSV format makes it readily able to be loaded to a relation Database in the future.
+This project implements an Extract, Transform, and Load (ETL) pipeline designed to scrape Magic: The Gathering (MTG) card data from an online source and transform it into clean, normalised data. The resulting tables are saved as CSV files, ready for analysis with Pandas to be used with streamlit. The CSV format makes it readily able to be loaded to a relation Database in the future.
 
 The primary goal is to provide a dataset for MTG card analysis, specifically focusing on card characteristics (like mana cost and type) and then use this to power a streamlit app for user accessibility
 
@@ -39,7 +39,7 @@ The pipeline is executed via main.py and follows four phases: Scraping, Extracti
 
   - Generic_Mana count
 
-  - Colour flags (Is_W, Is_U, Is_B, Is_R, Is_G)
+  - Colour flags (Is_W, Is_U, Is_B, Is_R, Is_G, Is_C)
 
   - Special flags (Is_X, Is_Hybrid)
 
