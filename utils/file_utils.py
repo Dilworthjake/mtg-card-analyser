@@ -1,6 +1,14 @@
 from pathlib import Path
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple  # Removed Final
+
+# --------------------
+#     CONSTANTS
+# --------------------
+# Define the logging level constants using standard Python variables
+INFO = logging.INFO
+DEBUG = logging.DEBUG
+ERROR = logging.ERROR
 
 
 def _ensure_log_directory() -> Path:
@@ -11,7 +19,6 @@ def _ensure_log_directory() -> Path:
     Returns:
         Path to the absolute logs directory.
     """
-
     project_root = Path.cwd()
     log_directory = project_root / "logs"
 
@@ -47,7 +54,7 @@ def _create_handlers(
 def setup_logger(
     name: str,
     log_file: str,
-    level: int = logging.INFO,  # Changed default to INFO, ERROR is too strict for general use
+    level: int = INFO,  # Using the defined INFO constant
 ) -> logging.Logger:
     """
     Configure logger with file and console output.
@@ -76,7 +83,7 @@ def setup_logger(
 
 def log_extract_success(
     logger: logging.Logger,
-    type: str,
+    data_type: str,  # Renamed from 'type' to avoid shadowing built-in function
     shape: Tuple[int, int],
     execution_time: float,
     expected_rate: float,
@@ -85,19 +92,26 @@ def log_extract_success(
 
     Args:
         logger: Logger instance to use for output.
-        type: Description of the data type extracted.
+        data_type: Description of the data type extracted.
         shape: Tuple of (rows, columns) extracted.
         execution_time: Time taken for extraction in seconds.
         expected_rate: Expected time per row threshold.
     """
-    logger.info(f"Data extraction successful for {type}!")
-    logger.info(f"Extracted {shape[0]} rows " f"and {shape[1]} columns")
-    logger.info(f"Execution time: {execution_time} seconds")
+    logger.info(f"Data extraction successful for {data_type}!")
+    logger.info(f"Extracted {shape[0]} rows and {shape[1]} columns")
+    logger.info(f"Execution time: {execution_time:.4f} seconds")
 
-    if execution_time / shape[0] <= expected_rate:
-        logger.info("Execution time per row: " f"{execution_time / shape[0]} seconds")
+    # Conditional check to prevent ZeroDivisionError
+    if shape[0] == 0:
+        logger.warning("Extracted 0 rows. Performance check skipped.")
+        return
+
+    time_per_row = execution_time / shape[0]
+
+    if time_per_row <= expected_rate:
+        logger.info(f"Execution time per row: {time_per_row:.6f} seconds (OK)")
     else:
         logger.warning(
-            f"Execution time per row exceeds {expected_rate}: "
-            f"{execution_time / shape[0]} seconds"
+            f"Execution time per row exceeds {expected_rate:.6f}s: "
+            f"{time_per_row:.6f} seconds (🚨 SLOW!)"
         )

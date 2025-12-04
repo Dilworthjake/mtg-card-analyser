@@ -1,7 +1,7 @@
-# Python Environment Files
+
 venv/
 __pycache__/
-
-# Project Files
+logs/
 *.pyc
 .DS_Store
+notebooks/
