@@ -27,7 +27,7 @@ The pipeline is executed via main.py and follows four phases: Scraping, Extracti
 
 #### 3. Transforming
 
-- This phase is handled by the src/transform/cleaner.py script. It performs cleaning, feature engineering, and data normalization, ensuring data quality and preparing the schema for analysis.
+- This phase is handled by the src/transform/cleaner.py script. It performs cleaning, feature engineering, and data normalisation, ensuring data quality and preparing the schema for analysis.
 
 - Main Transformation Steps:
 

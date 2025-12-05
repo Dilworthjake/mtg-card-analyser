@@ -124,3 +124,12 @@
 - properly handle rarity options e.g (foils)
 - add cards text/rule to comparison page in case image does not load
 - add cards power and toughness as filters
+
+# Challenges
+
+- multi face cards
+- file pathing
+- stream lit table link
+- card convention consistency changes over time adding new rules
+- scraping everything would require going into each card link to get all info adding over 30000 pages to scrape
+- time needed

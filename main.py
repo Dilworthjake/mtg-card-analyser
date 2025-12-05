@@ -53,7 +53,7 @@ def main():
     except Exception as e:
         logger.error(f"FATAL ERROR during Load: {e}")
 
-    logger.info("Pipeline complete. All normalized data tables saved to data/clean/.")
+    logger.info("Pipeline complete. All normalised data tables saved to data/clean/.")
 
 
 if __name__ == "__main__":
