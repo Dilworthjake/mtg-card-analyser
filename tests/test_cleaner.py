@@ -7,11 +7,17 @@ from src.transform.cleaner import (
     run_cleaner,
 )
 
+##################################
 # --- Helper Function Tests ---
+##################################
+
+#################
+# --- types ---
+#################
 
 
 def test_clean_types_happy_path_all_present():
-    """Tests a type string with Super, Primary, and Subtypes."""
+    # Tests a type string with Super, Primary, and Subtypes.
     type_str = "Legendary Creature - Elf Warrior"
     expected = {
         "Super_Type": "Legendary",
@@ -22,7 +28,7 @@ def test_clean_types_happy_path_all_present():
 
 
 def test_clean_types_no_supertype():
-    """Tests a type string with Primary and Subtypes but no Supertype."""
+    # Tests a type string with Primary and Subtypes but no Supertype.
     type_str = "Sorcery - Arcane"
     expected = {
         "Super_Type": "",
@@ -33,7 +39,7 @@ def test_clean_types_no_supertype():
 
 
 def test_clean_types_only_primary():
-    """Tests a type string with only a Primary type."""
+    # Tests a type string with only a Primary type.
     type_str = "Instant"
     expected = {
         "Super_Type": "",
@@ -44,7 +50,7 @@ def test_clean_types_only_primary():
 
 
 def test_clean_types_with_em_dash():
-    """Tests splitting using an em-dash instead of a hyphen."""
+    # Tests splitting using an em-dash instead of a hyphen.
     type_str = "Artifact — Equipment"
     expected = {
         "Super_Type": "",
@@ -54,11 +60,13 @@ def test_clean_types_with_em_dash():
     assert clean_types(type_str) == expected
 
 
-# ---
+################
+# --- mana ---
+################
 
 
 def test_parse_mana_cost_generic_and_coloured():
-    """Tests a standard mana cost (e.g., 3WB)."""
+    # Tests a standard mana cost (e.g., 3WB).
     cost_str = "sym_3 sym_w sym_b"
     expected = {
         "CMC": 5,
@@ -76,10 +84,10 @@ def test_parse_mana_cost_generic_and_coloured():
 
 
 def test_parse_mana_cost_hybrid_and_generic():
-    """Tests a cost including a hybrid symbol (e.g., 2/U)."""
+    # Tests a cost including a hybrid symbol (e.g., 2/U).
     cost_str = "sym_2 sym_2/u"
     expected = {
-        "CMC": 3,
+        "CMC": 4,
         "Is_Hybrid": True,
         "Generic_Mana": 2,
         "Is_X": False,
@@ -94,7 +102,7 @@ def test_parse_mana_cost_hybrid_and_generic():
 
 
 def test_parse_mana_cost_x_and_coloured():
-    """Tests a cost including X (variable) mana."""
+    # Tests a cost including X (variable) mana.
     cost_str = "sym_x sym_r"
     expected = {
         "CMC": 1,
@@ -112,7 +120,7 @@ def test_parse_mana_cost_x_and_coloured():
 
 
 def test_parse_mana_cost_empty():
-    """Tests an empty mana cost string (e.g., for Lands)."""
+    # Tests an empty mana cost string (e.g., for Lands).
     cost_str = ""
     expected = {
         "CMC": 0,
@@ -129,11 +137,13 @@ def test_parse_mana_cost_empty():
     assert parse_mana_cost(cost_str) == expected
 
 
-# ---
+######################
+# --- face test ---
+######################
 
 
 def test_process_card_face_happy_path():
-    """Tests the combination of type and mana parsing for a single face."""
+    # Tests the combination of type and mana parsing for a single face.
     # Create a mock Series for the original row
     mock_row = pd.Series({"Name": "Example Card", "Edition": "Example Set"})
     type_str = "Basic Land - Mountain"
@@ -150,12 +160,14 @@ def test_process_card_face_happy_path():
     assert result["Is_C"] == True
 
 
+#############################
 # --- Orchestrator Test ---
+#############################
 
 
 @pytest.fixture
 def sample_raw_df() -> pd.DataFrame:
-    """Fixture for a sample input DataFrame including a standard and a split card."""
+    # Fixture for a sample input DataFrame including a standard and a split card.
     data = [
         {
             "Name": "Standard Card",
@@ -172,7 +184,7 @@ def sample_raw_df() -> pd.DataFrame:
             "Mana Cost": "sym_u // sym_2 sym_g",
         },
     ]
-    # NOTE: Card_ID is implicitly derived from the index during testing.
+    # NOTE: Card_ID is made from the index during testing.
     return pd.DataFrame(data)
 
 
