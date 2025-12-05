@@ -1,319 +1,240 @@
 import pandas as pd
-import logging
-import sys
 import pytest
-from pathlib import Path
-from utils.file_utils import setup_logger
-
-# Uses pathlib to find the project root (one level up from tests/)
-project_root = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(project_root))
-
-# Set up a minimal logger for the test script itself
-logger = setup_logger(__name__, "test_data.log", level=logging.INFO)
-
-# Import the main transformation function
-try:
-    from src.transform.cleaner import run_cleaner
-except ImportError:
-    logger.error("--- CRITICAL ERROR ---")
-    logger.error("Could not import 'run_cleaner' from 'src.transform.cleaner'.")
-    logger.error(
-        "Please ensure you have created the directory 'src/transform' and the file 'cleaner.py' inside it."
-    )
-    logger.error(
-        "The project structure must be: mtg_etl_project/src/transform/cleaner.py"
-    )
-    sys.exit(1)
-
-
-# Global DataFrame variables, set to None
-RAW_DF = None
-CARD_DETAILS_DF = None
-EDITION_LOOKUP_DF = None
-SUBTYPE_LOOKUP_DF = None
-CARD_SUBTYPE_LINK_DF = None
-
-
-def create_sample_data() -> pd.DataFrame:
-    """Creates the raw sample data."""
-    logger.info("Creating sample data for cleaner testing.")
-
-    # Raw data format: [Name, Edition, Price, Type, Mana Cost]
-    data = [
-        # 1. Legendary Creature with Generic, White, Black mana
-        {
-            "Name": '"""Brims"" Barone, Midway Mobster"',
-            "Mana Cost": "sym_3 sym_W sym_B",
-            "Type": "Legendary Creature - Human Rogue",
-            "Edition": "Cheapest Recent Printing - Unfinity",
-            "Price": 0.07,
-        },
-        # 2. Basic Creature with single Black mana
-        {
-            "Name": '"""Lifetime"" Pass Holder"',
-            "Mana Cost": "sym_B",
-            "Type": "Creature - Zombie Guest",
-            "Edition": "Cheapest Recent Printing - Unfinity",
-            "Price": 0.22,
-        },
-        # 3. Simple Enchantment
-        {
-            "Name": '"""Rumors of My Death . . ."""',
-            "Mana Cost": "sym_2 sym_B",
-            "Type": "Enchantment",
-            "Edition": "Cheapest Recent Printing - Unstable",
-            "Price": 0.10,
-        },
-        # 4. Artifact Equipment with Generic and White mana, single subtype
-        {
-            "Name": "+2 Mace",
-            "Mana Cost": "sym_1 sym_W",
-            "Type": "Artifact - Equipment",
-            "Edition": "Cheapest Recent Printing - Adventures in the Forgotten Realms",
-            "Price": 0.05,
-        },
-        # 5. Scheme (Archenemy card) - typically no mana cost
-        {
-            "Name": "A Display of My Dark Power",
-            "Mana Cost": "",
-            "Type": "Scheme",
-            "Edition": "Cheapest Recent Printing - Archenemy",
-            "Price": 22.95,
-        },
-    ]
-    df = pd.DataFrame(data)
-
-    # Basic structural check
-    expected_input_cols = ["Name", "Mana Cost", "Type", "Edition", "Price"]
-    assert sorted(df.columns.tolist()) == sorted(
-        expected_input_cols
-    ), f"Raw data input columns are incorrect. Found: {df.columns.tolist()}"
-    logger.info(
-        f"Raw input DataFrame has {len(df.columns)} columns (Scraper check passed)."
-    )
-
-    return df
-
-
-def validate_schema(df: pd.DataFrame, expected_schema: list, title: str):
-    """Helper function to validate the columns and order of a DataFrame."""
-    actual_columns = list(df.columns)
-    assert (
-        actual_columns == expected_schema
-    ), f"Schema validation failed for {title}.\nExpected: {expected_schema}\nActual: {actual_columns}"
-    logger.info(f"Schema validation passed for {title}.")
-    print(f"Schema for {title} is correct.")
-
-
-def check_card_attributes(df: pd.DataFrame, name: str, expected: dict):
-    """Helper function to check a single card's attributes in the Card Details table."""
-    card = df[df["Name"] == name]
-    assert len(card) == 1, f"Failed to find unique row for card: {name}"
-
-    for key, expected_value in expected.items():
-        actual_value = card.iloc[0][key]
-        assert (
-            actual_value == expected_value
-        ), f"Validation failed for {name} on column '{key}'. Expected: {expected_value}, Actual: {actual_value}"
-    logger.info(f"Successfully validated transformation for: {name}")
-
-
-logger.info("Running initial data setup and transformation...")
-RAW_DF = create_sample_data()
-CARD_DETAILS_DF, EDITION_LOOKUP_DF, SUBTYPE_LOOKUP_DF, CARD_SUBTYPE_LINK_DF = (
-    run_cleaner(RAW_DF)
+from src.transform.cleaner import (
+    clean_types,
+    parse_mana_cost,
+    process_card_face,
+    run_cleaner,
 )
-logger.info("Data setup complete. Ready to run tests.")
+
+# --- Helper Function Tests ---
 
 
-# --------------------------------------------------------------------------
-# MODULAR TEST FUNCTIONS
-# --------------------------------------------------------------------------
+def test_clean_types_happy_path_all_present():
+    """Tests a type string with Super, Primary, and Subtypes."""
+    type_str = "Legendary Creature - Elf Warrior"
+    expected = {
+        "Super_Type": "Legendary",
+        "Primary_Type": "Creature",
+        "Subtypes_List": "Elf,Warrior",
+    }
+    assert clean_types(type_str) == expected
 
 
-def test_schema_integrity():
-    """Test 1: Check the structure (columns and order) of all four resulting tables."""
-    logger.info("--- Running Schema Integrity Test ---")
+def test_clean_types_no_supertype():
+    """Tests a type string with Primary and Subtypes but no Supertype."""
+    type_str = "Sorcery - Arcane"
+    expected = {
+        "Super_Type": "",
+        "Primary_Type": "Sorcery",
+        "Subtypes_List": "Arcane",
+    }
+    assert clean_types(type_str) == expected
 
-    # Expected Schemas (including the exact order)
-    card_details_schema = [
-        "Card_ID",
-        "Edition_ID",
-        "Name",
-        "Super_Type",
-        "Primary_Type",
-        "CMC",
-        "Is_Hybrid",
-        "Generic_Mana",
-        "Is_X",
-        "Is_W",
-        "Is_U",
-        "Is_B",
-        "Is_R",
-        "Is_G",
-        "Is_C",
+
+def test_clean_types_only_primary():
+    """Tests a type string with only a Primary type."""
+    type_str = "Instant"
+    expected = {
+        "Super_Type": "",
+        "Primary_Type": "Instant",
+        "Subtypes_List": "",
+    }
+    assert clean_types(type_str) == expected
+
+
+def test_clean_types_with_em_dash():
+    """Tests splitting using an em-dash instead of a hyphen."""
+    type_str = "Artifact — Equipment"
+    expected = {
+        "Super_Type": "",
+        "Primary_Type": "Artifact",
+        "Subtypes_List": "Equipment",
+    }
+    assert clean_types(type_str) == expected
+
+
+# ---
+
+
+def test_parse_mana_cost_generic_and_coloured():
+    """Tests a standard mana cost (e.g., 3WB)."""
+    cost_str = "sym_3 sym_w sym_b"
+    expected = {
+        "CMC": 5,
+        "Is_Hybrid": False,
+        "Generic_Mana": 3,
+        "Is_X": False,
+        "Is_W": True,
+        "Is_U": False,
+        "Is_B": True,
+        "Is_R": False,
+        "Is_G": False,
+        "Is_C": False,
+    }
+    assert parse_mana_cost(cost_str) == expected
+
+
+def test_parse_mana_cost_hybrid_and_generic():
+    """Tests a cost including a hybrid symbol (e.g., 2/U)."""
+    cost_str = "sym_2 sym_2/u"
+    expected = {
+        "CMC": 3,
+        "Is_Hybrid": True,
+        "Generic_Mana": 2,
+        "Is_X": False,
+        "Is_W": False,
+        "Is_U": True,
+        "Is_B": False,
+        "Is_R": False,
+        "Is_G": False,
+        "Is_C": False,
+    }
+    assert parse_mana_cost(cost_str) == expected
+
+
+def test_parse_mana_cost_x_and_coloured():
+    """Tests a cost including X (variable) mana."""
+    cost_str = "sym_x sym_r"
+    expected = {
+        "CMC": 1,
+        "Is_Hybrid": False,
+        "Generic_Mana": 0,
+        "Is_X": True,
+        "Is_W": False,
+        "Is_U": False,
+        "Is_B": False,
+        "Is_R": True,
+        "Is_G": False,
+        "Is_C": False,
+    }
+    assert parse_mana_cost(cost_str) == expected
+
+
+def test_parse_mana_cost_empty():
+    """Tests an empty mana cost string (e.g., for Lands)."""
+    cost_str = ""
+    expected = {
+        "CMC": 0,
+        "Is_Hybrid": False,
+        "Generic_Mana": 0,
+        "Is_X": False,
+        "Is_W": False,
+        "Is_U": False,
+        "Is_B": False,
+        "Is_R": False,
+        "Is_G": False,
+        "Is_C": False,
+    }
+    assert parse_mana_cost(cost_str) == expected
+
+
+# ---
+
+
+def test_process_card_face_happy_path():
+    """Tests the combination of type and mana parsing for a single face."""
+    # Create a mock Series for the original row
+    mock_row = pd.Series({"Name": "Example Card", "Edition": "Example Set"})
+    type_str = "Basic Land - Mountain"
+    mana_str = "sym_c"
+    face_name = "Example Card Face A"
+
+    result = process_card_face(mock_row, type_str, mana_str, face_name)
+
+    assert result["Name"] == face_name
+    assert result["Super_Type"] == "Basic"
+    assert result["Primary_Type"] == "Land"
+    assert result["Subtypes_List"] == "Mountain"
+    assert result["CMC"] == 1
+    assert result["Is_C"] == True
+
+
+# --- Orchestrator Test ---
+
+
+@pytest.fixture
+def sample_raw_df() -> pd.DataFrame:
+    """Fixture for a sample input DataFrame including a standard and a split card."""
+    data = [
+        {
+            "Name": "Standard Card",
+            "Edition": "Cheapest Recent Printing - Modern Horizons",
+            "Price": 1.5,
+            "Type": "Legendary Creature - Goblin Warrior",
+            "Mana Cost": "sym_2 sym_r",
+        },
+        {
+            "Name": "Split Face A // Split Face B",
+            "Edition": "Cheapest Recent Printing - Adventures in the Forgotten Realms",
+            "Price": 3.0,
+            "Type": "Instant // Sorcery",
+            "Mana Cost": "sym_u // sym_2 sym_g",
+        },
     ]
-    card_subtype_link_schema = ["Card_ID", "Subtype_ID"]
-    edition_lookup_schema = ["Edition_Name", "Edition_ID"]
-    subtype_lookup_schema = ["Subtype_Name", "Subtype_ID"]
-
-    validate_schema(
-        CARD_DETAILS_DF, card_details_schema, "1. Card Details (Fact Table)"
-    )
-    validate_schema(
-        EDITION_LOOKUP_DF, edition_lookup_schema, "2. Edition Lookup (Dimension Table)"
-    )
-    validate_schema(
-        SUBTYPE_LOOKUP_DF, subtype_lookup_schema, "3. Subtype Lookup (Dimension Table)"
-    )
-    validate_schema(
-        CARD_SUBTYPE_LINK_DF,
-        card_subtype_link_schema,
-        "4. Card-Subtype Link (Many-to-Many)",
-    )
+    # NOTE: Card_ID is implicitly derived from the index during testing.
+    return pd.DataFrame(data)
 
 
-def test_card_1_brims_barone():
-    """Test 2: Validate the Legendary Creature card 'Brims Barone'."""
-    logger.info("--- Running Card 1: Legendary Creature Test ---")
-    check_card_attributes(
-        CARD_DETAILS_DF,
-        '"""Brims"" Barone, Midway Mobster"',
-        {
-            "Super_Type": "Legendary",
-            "Primary_Type": "Creature",
-            "CMC": 5,
-            "Generic_Mana": 3,
-            "Is_W": True,
-            "Is_B": True,
-            "Is_U": False,
-            "Is_R": False,
-            "Is_G": False,
-            "Is_C": False,
-        },
-    )
+def test_run_cleaner_happy_path_structure_and_data(sample_raw_df):
+    """
+    Tests the main ETL orchestrator for correct structure, keys, and normalized data.
+    """
+    (
+        card_df,
+        edition_df,
+        subtype_df,
+        link_df,
+    ) = run_cleaner(sample_raw_df)
 
+    # 1. Card Details (Final Fact/Dimension Table)
+    # The split card (1 raw row) becomes 2 rows, plus the standard card (1 row) = 3 rows total.
+    assert len(card_df) == 3
+    assert "Card_ID" in card_df.columns
+    assert "Edition_ID" in card_df.columns
+    assert card_df["Card_ID"].is_unique
+    assert card_df["Card_ID"].min() == 1  # Check PK starts at 1
+    assert "Edition" not in card_df.columns  # Check raw edition column is removed
 
-def test_card_2_lifetime_pass_holder():
-    """Test 3: Validate the basic creature card 'Lifetime Pass Holder'."""
-    logger.info("--- Running Card 2: Basic Creature Test ---")
-    check_card_attributes(
-        CARD_DETAILS_DF,
-        '"""Lifetime"" Pass Holder"',
-        {
-            "Super_Type": "",
-            "Primary_Type": "Creature",
-            "CMC": 1,
-            "Generic_Mana": 0,
-            "Is_B": True,
-            "Is_W": False,
-        },
-    )
+    # Check data for the Standard Card
+    standard_card = card_df[card_df["Name"] == "Standard Card"].iloc[0]
+    assert standard_card["Super_Type"] == "Legendary"
+    assert standard_card["Primary_Type"] == "Creature"
+    assert standard_card["CMC"] == 3
+    assert standard_card["Is_R"] == True
+    assert standard_card["Edition_ID"] == 1  # Check FK assignment
 
+    # Check data for Split Face A
+    split_card_a = card_df[card_df["Name"] == "Split Face A"].iloc[0]
+    assert split_card_a["Primary_Type"] == "Instant"
+    assert split_card_a["CMC"] == 1
+    assert split_card_a["Is_U"] == True
+    assert split_card_a["Edition_ID"] == 2  # Check FK assignment
 
-def test_card_3_rumors_of_my_death():
-    """Test 4: Validate the simple Enchantment card 'Rumors of My Death...'."""
-    logger.info("--- Running Card 3: Enchantment Test ---")
-    check_card_attributes(
-        CARD_DETAILS_DF,
-        '"""Rumors of My Death . . ."""',
-        {
-            "Super_Type": "",
-            "Primary_Type": "Enchantment",
-            "CMC": 3,
-            "Generic_Mana": 2,
-            "Is_B": True,
-        },
-    )
-
-
-def test_card_4_plus_two_mace():
-    """Test 5: Validate the Artifact Equipment card '+2 Mace'."""
-    logger.info("--- Running Card 4: Artifact Test ---")
-    check_card_attributes(
-        CARD_DETAILS_DF,
-        "+2 Mace",
-        {
-            "Super_Type": "",
-            "Primary_Type": "Artifact",
-            "CMC": 2,
-            "Generic_Mana": 1,
-            "Is_W": True,
-        },
-    )
-
-
-def test_card_5_dark_power_scheme():
-    """Test 6: Validate the special type (Scheme) card with no mana cost."""
-    logger.info("--- Running Card 5: Scheme/No Mana Test ---")
-    check_card_attributes(
-        CARD_DETAILS_DF,
-        "A Display of My Dark Power",
-        {
-            "Super_Type": "",
-            "Primary_Type": "Scheme",
-            "CMC": 0,  # Should be 0 when Mana Cost is empty
-            "Generic_Mana": 0,
-            "Is_W": False,
-            "Is_B": False,
-        },
-    )
-
-
-def test_lookup_table_content():
-    """Test 7: Check that required edition and subtype entries exist in lookups."""
-    logger.info("--- Running Lookup Table Content Test ---")
-
-    # Check Edition Cleaning
-    unfinity_row = EDITION_LOOKUP_DF[EDITION_LOOKUP_DF["Edition_Name"] == "Unfinity"]
-    assert len(unfinity_row) == 1, "Edition cleaning failed. 'Unfinity' not found."
-    logger.info("Successfully validated Edition Cleaning (Unfinity).")
-
-    # Check Subtypes exist
-    required_subtypes = ["Human", "Rogue", "Zombie", "Guest", "Equipment"]
-    for subtype in required_subtypes:
-        row = SUBTYPE_LOOKUP_DF[SUBTYPE_LOOKUP_DF["Subtype_Name"] == subtype]
-        assert len(row) == 1, f"Subtype '{subtype}' not found in Lookup table."
-        logger.info(f"Subtype '{subtype}' found successfully.")
-
-
-def test_linking_table_integrity():
-    """Test 8: Check a specific link (e.g., +2 Mace -> Equipment) exists."""
-    logger.info("--- Running Linking Table Integrity Test ---")
-
-    # Find IDs for +2 Mace and Equipment
-    mace_row = CARD_DETAILS_DF[CARD_DETAILS_DF["Name"] == "+2 Mace"]
-    assert not mace_row.empty, "Card ID for +2 Mace not found for linking test."
-    mace_id = mace_row.iloc[0]["Card_ID"]
-
-    equipment_row = SUBTYPE_LOOKUP_DF[SUBTYPE_LOOKUP_DF["Subtype_Name"] == "Equipment"]
-    assert (
-        not equipment_row.empty
-    ), "Subtype ID for Equipment not found for linking test."
-    equipment_id = equipment_row.iloc[0]["Subtype_ID"]
-
-    # Check the link exists in the link table
-    link_found = CARD_SUBTYPE_LINK_DF[
-        (CARD_SUBTYPE_LINK_DF["Card_ID"] == mace_id)
-        & (CARD_SUBTYPE_LINK_DF["Subtype_ID"] == equipment_id)
+    # 2. Edition Lookup Table
+    assert len(edition_df) == 2  # 2 unique editions
+    assert list(edition_df["Edition_Name"]) == [
+        "Modern Horizons",
+        "Adventures in the Forgotten Realms",
     ]
-    assert len(link_found) == 1, "Subtype link check failed for +2 Mace (Equipment)."
-    logger.info("Successfully validated subtype linking for +2 Mace (Equipment).")
+    assert "Edition_ID" in edition_df.columns
+    assert edition_df["Edition_ID"].is_unique
 
+    # 3. Subtype Lookup Table
+    # Expected Subtypes: Goblin, Warrior, Sorcery, Instant (should only get Goblin, Warrior for the link table test)
+    # The two Primary Types (Instant, Sorcery) are NOT subtypes, they shouldn't be here.
+    # The raw data only has subtypes for the first card.
+    assert len(subtype_df) == 2  # Goblin, Warrior
+    assert "Subtype_ID" in subtype_df.columns
+    assert subtype_df["Subtype_ID"].is_unique
+    assert sorted(subtype_df["Subtype_Name"].tolist()) == ["Goblin", "Warrior"]
 
-if __name__ == "__main__":
-    # If run directly (not via a test runner like pytest), we execute the tests sequentially
-    print("\nExecuting tests directly (not using pytest's discovery mode).")
-    try:
-        test_schema_integrity()
-        test_card_1_brims_barone()
-        test_card_2_lifetime_pass_holder()
-        test_card_3_rumors_of_my_death()
-        test_card_4_plus_two_mace()
-        test_card_5_dark_power_scheme()
-        test_lookup_table_content()
-        test_linking_table_integrity()
-        logger.info("\n*** SUCCESS: All 8 modular tests passed successfully! ***")
-    except AssertionError as e:
-        logger.error(f"\n*** FAILURE: A test failed. ***\nDetails: {e}")
+    # 4. Card Subtype Link Table
+    # Only the standard card (Card_ID 1) has subtypes.
+    # Card_ID 1 should link to 'Goblin' (Subtype_ID 1) and 'Warrior' (Subtype_ID 2)
+    assert len(link_df) == 2
+    assert link_df.columns.tolist() == ["Card_ID", "Subtype_ID"]
+    # Check the links are correct (assuming Card_ID 1, Subtype_ID 1 and 2)
+    expected_links = set([(1, 1), (1, 2)])
+    actual_links = set(zip(link_df["Card_ID"].tolist(), link_df["Subtype_ID"].tolist()))
+    assert actual_links == expected_links
